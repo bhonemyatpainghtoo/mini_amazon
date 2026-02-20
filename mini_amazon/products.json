@@ -1,0 +1,62 @@
+[
+    {
+        "product_id": "P1001",
+        "name": "Wireless Mouse",
+        "price": 19.99,
+        "stock": 50
+    },
+    {
+        "product_id": "P1002",
+        "name": "USB-C Cable",
+        "price": 9.99,
+        "stock": 100
+    },
+    {
+        "product_id": "P1003",
+        "name": "Mechanical Keyboard",
+        "price": 79.99,
+        "stock": 25
+    },
+    {
+        "product_id": "P1004",
+        "name": "HD Webcam",
+        "price": 49.99,
+        "stock": 30
+    },
+    {
+        "product_id": "P1005",
+        "name": "Laptop Stand",
+        "price": 29.99,
+        "stock": 40
+    },
+    {
+        "product_id": "P1006",
+        "name": "Bluetooth Headphones",
+        "price": 59.99,
+        "stock": 35
+    },
+    {
+        "product_id": "P1007",
+        "name": "External SSD 1TB",
+        "price": 89.99,
+        "stock": 20
+    },
+    {
+        "product_id": "P1008",
+        "name": "Monitor 24 inch",
+        "price": 199.99,
+        "stock": 15
+    },
+    {
+        "product_id": "P1009",
+        "name": "Desk Lamp LED",
+        "price": 24.99,
+        "stock": 45
+    },
+    {
+        "product_id": "P1010",
+        "name": "Phone Charger",
+        "price": 14.99,
+        "stock": 73
+    }
+]
