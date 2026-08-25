@@ -1,46 +1,154 @@
-Mini-Amazon E-Commerce System
-1. How to Run the Program
+# Mini Amazon
 
-    Make sure you have Python 3 installed on your computer.
+Mini Amazon is a command-line e-commerce application built with Python. It supports user accounts, product management, shopping carts, and order processing.
 
-    Keep all six .py files in the same folder.
+## Features
 
-    Open your terminal (or Command Prompt/PowerShell).
+* User registration and login
+* Product browsing and management
+* Shopping cart functionality
+* Order creation and processing
+* Persistent data storage using JSON files
+* Object-oriented program structure
 
-    Type python main.py and press Enter.
+## Tech Stack
 
-    Follow the menus by typing the number of the action you want to take.
+* Python
+* Object-Oriented Programming
+* JSON
+* Git & GitHub
 
-2. Features Implemented
+## Project Structure
 
-    User Accounts: You can register a new account and log in.
+```text
+mini_amazon/
+├── main.py
+├── users.py
+├── products.py
+├── cart.py
+├── orders.py
+├── storage.py
+├── users.json
+├── products.json
+├── carts.json
+└── orders.json
+```
 
-    Security: Passwords are protected using SHA-256 hashing, meaning they are not stored as plain text.
+## Running the Project
 
-    Product Search: You can see all products or search for specific items by name.
+Make sure Python is installed.
 
-    Smart Cart: You can add/remove items. The system checks if enough stock is available before letting you add an item.
+Clone the repository:
 
-    Checkout: The system calculates the total, updates the inventory, and clears your cart.
+```bash
+git clone https://github.com/bhonemyatpainghtoo/mini_amazon.git
+```
 
-    Receipt Export: After buying, you can save your receipt as a .txt file.
+Go into the project directory:
 
-3. How Data is Stored
+```bash
+cd mini_amazon
+```
 
-The program saves everything into JSON files so your data is still there when you restart the program.
+Run the application:
 
-    users.json: Stores your username and hashed password.
+```bash
+python main.py
+```
 
-    products.json: Stores the items, prices, and stock levels.
+## What I Learned
 
-    carts.json: Keeps track of what each user has put in their cart.
+While developing this project, I practiced:
 
-    orders.json: A history of every successful purchase with a timestamp.
+* Object-oriented programming in Python
+* Separating application functionality into multiple modules
+* Reading and writing structured data using JSON
+* Implementing user, product, cart, and order workflows
+* Using Git and GitHub to manage project development
 
-4. Known Limitations
+## Planned Improvements
 
-    Single User: This is a console app designed for one person to use at a time.
+* Replace JSON storage with SQLite
+* Add automated tests using pytest
+* Improve password storage and authentication security
+* Add input validation and error handling
+* Convert the project into a REST API using FastAPI
+* Add Docker support# Mini Amazon
 
-    No Admin Menu: Currently, to add new products or change prices, you have to edit the products.json file manually.
+Mini Amazon is a command-line e-commerce application built with Python. It supports user accounts, product management, shopping carts, and order processing.
 
-    File Storage: It uses simple files instead of a professional database like SQLite.
+## Features
+
+* User registration and login
+* Product browsing and management
+* Shopping cart functionality
+* Order creation and processing
+* Persistent data storage using JSON files
+* Object-oriented program structure
+
+## Tech Stack
+
+* Python
+* Object-Oriented Programming
+* JSON
+* Git & GitHub
+
+## Project Structure
+
+```text
+mini_amazon/
+├── main.py
+├── users.py
+├── products.py
+├── cart.py
+├── orders.py
+├── storage.py
+├── users.json
+├── products.json
+├── carts.json
+└── orders.json
+```
+
+## Running the Project
+
+Make sure Python is installed.
+
+Clone the repository:
+
+```bash
+git clone https://github.com/bhonemyatpainghtoo/mini_amazon.git
+```
+
+Go into the project directory:
+
+```bash
+cd mini_amazon
+```
+
+Run the application:
+
+```bash
+python main.py
+```
+
+## What I Learned
+
+While developing this project, I practiced:
+
+* Object-oriented programming in Python
+* Separating application functionality into multiple modules
+* Reading and writing structured data using JSON
+* Implementing user, product, cart, and order workflows
+* Using Git and GitHub to manage project development
+
+## Planned Improvements
+
+* Replace JSON storage with SQLite
+* Add automated tests using pytest
+* Improve password storage and authentication security
+* Add input validation and error handling
+* Convert the project into a REST API using FastAPI
+* Add Docker support
+* Add CI testing with GitHub Actions
+
+* Add CI testing with GitHub Actions
