@@ -1,104 +1,230 @@
-from storage import Storage
+from database import get_connection
 
 class CartManager:   
-    def __init__(self):
-        self.storage = Storage('carts.json')
-        self.carts = self.storage.load()
+    def get_user_id(self, username):
+        username = username.lower().strip()
 
-        if self.carts is None:
-            self.carts = {}
-            self.storage.save(self.carts)
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,)
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            return row[0]
+
+        finally:
+            conn.close()
     
     def get_cart(self, username):
-        if username not in self.carts:
-            self.carts[username] = []
-            self.storage.save(self.carts)
-        
-        return self.carts[username]
+        user_id = self.get_user_id(username)
+
+        if user_id is None:
+            return []
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT product_id, quantity
+                FROM cart_items
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+
+            rows = cursor.fetchall()
+
+            cart = []
+
+            for row in rows:
+                cart.append({
+                    "product_id": row[0],
+                    "quantity": row[1]
+                })
+
+            return cart
+
+        finally:
+            conn.close()
     
     def add_to_cart(self, username, product_id, quantity, product_manager):
         if quantity <= 0:
             return False, "Quantity must be greater than zero"
 
-        available, message = product_manager.check_stock(product_id, quantity)
-        if not available:
-            return False, message
+        product_id = product_id.upper().strip()
 
-        cart = self.get_cart(username)
+        user_id = self.get_user_id(username)
 
-        item_found = None
-        for item in cart:
-            if item['product_id'] == product_id:
-                item_found = item
-                break
-
-        if item_found is not None:
-            new_quantity = item_found['quantity'] + quantity
-            
-            available, message = product_manager.check_stock(product_id, new_quantity)
-            if not available:
-                return False, f"Cannot add {quantity} more. {message}"
-            
-            item_found['quantity'] = new_quantity
-
-        else:
-            cart.append({
-                'product_id': product_id,
-                'quantity': quantity
-            })
-
-        self.carts[username] = cart
-        self.storage.save(self.carts)
+        if user_id is None:
+            return False, "User not found"
 
         product = product_manager.find_product_id(product_id)
-        
-        return True, f"Added {quantity} x {product['name']} to cart"
+
+        if product is None:
+            return False, f"Product '{product_id}' not found"
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT quantity
+                FROM cart_items
+                WHERE user_id = ? AND product_id = ?
+                """,
+                (user_id, product_id)
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                new_quantity = quantity
+            else:
+                current_quantity = row[0]
+                new_quantity = current_quantity + quantity
+
+            available, message = product_manager.check_stock(
+                product_id,
+                new_quantity
+            )
+
+            if not available:
+                return False, message
+
+            if row is None:
+                cursor.execute(
+                    """
+                    INSERT INTO cart_items
+                    (user_id, product_id, quantity)
+                    VALUES (?, ?, ?)
+                    """,
+                    (user_id, product_id, new_quantity)
+                )
+
+            else:
+                cursor.execute(
+                    """
+                    UPDATE cart_items
+                    SET quantity = ?
+                    WHERE user_id = ? AND product_id = ?
+                    """,
+                    (new_quantity, user_id, product_id)
+                )
+
+            conn.commit()
+
+            return True, f"Added {quantity} x {product['name']} to cart"
+
+        finally:
+            conn.close()
     
     def remove_from_cart(self, username, product_id):
-        cart = self.get_cart(username)
-        original_count = len(cart)
+        product_id = product_id.upper().strip()
 
-        new_cart = []
-        for item in cart:
-            if item['product_id'] != product_id:
-                new_cart.append(item)
+        user_id = self.get_user_id(username)
 
-        if len(new_cart) < original_count:
-            self.carts[username] = new_cart
-            self.storage.save(self.carts)
+        if user_id is None:
+            return False, "User not found"
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                DELETE FROM cart_items
+                WHERE user_id = ? AND product_id = ?
+                """,
+                (user_id, product_id)
+            )
+
+            if cursor.rowcount == 0:
+                return False, f"{product_id} not found in cart"
+
+            conn.commit()
+
             return True, f"Removed {product_id} from cart"
-        else:
-            return False, f"{product_id} not found in cart"
+
+        finally:
+            conn.close()
     
     def update_quantity(self, username, product_id, new_quantity, product_manager):
         if new_quantity <= 0:
             return False, "Quantity must be greater than zero"
 
-        cart = self.get_cart(username)
-        
-        item_found = None
-        for item in cart:
-            if item['product_id'] == product_id:
-                item_found = item
-                break
+        product_id = product_id.upper().strip()
 
-        if item_found is None:
-            return False, f"{product_id} not found in cart"
+        user_id = self.get_user_id(username)
 
-        available, message = product_manager.check_stock(product_id, new_quantity)
+        if user_id is None:
+            return False, "User not found"
+
+        available, message = product_manager.check_stock(
+            product_id,
+            new_quantity
+        )
+
         if not available:
             return False, message
-        
-        item_found['quantity'] = new_quantity
-        self.storage.save(self.carts)
-        
-        return True, f"Updated {product_id} quantity to {new_quantity}"
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                UPDATE cart_items
+                SET quantity = ?
+                WHERE user_id = ? AND product_id = ?
+                """,
+                (new_quantity, user_id, product_id)
+            )
+
+            if cursor.rowcount == 0:
+                return False, f"{product_id} not found in cart"
+
+            conn.commit()
+
+            return True, f"Updated {product_id} quantity to {new_quantity}"
+
+        finally:
+            conn.close()
     
     def clear_cart(self, username):
-        self.carts[username] = []
-        self.storage.save(self.carts)
-        
-        return True, "Cart cleared"
+        user_id = self.get_user_id(username)
+
+        if user_id is None:
+            return False, "User not found"
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                DELETE FROM cart_items
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+
+            conn.commit()
+
+            return True, "Cart cleared"
+
+        finally:
+            conn.close()
     
     def calculate_total(self, username, product_manager):
         cart = self.get_cart(username)
