@@ -47,6 +47,36 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            total REAL NOT NULL CHECK (total >= 0),
+            timestamp TEXT NOT NULL,
+
+            FOREIGN KEY (user_id)
+                REFERENCES users(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS order_items (
+            order_id TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            quantity INTEGER NOT NULL CHECK (quantity > 0),
+            unit_price REAL NOT NULL CHECK (unit_price >= 0),
+
+            PRIMARY KEY (order_id, product_id),
+
+            FOREIGN KEY (order_id)
+                REFERENCES orders(order_id)
+                ON DELETE CASCADE,
+
+            FOREIGN KEY (product_id)
+                REFERENCES products(product_id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 

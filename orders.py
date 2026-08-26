@@ -1,80 +1,205 @@
-from storage import Storage
+from database import get_connection
 from datetime import datetime
 
-class OrderManager:
-    def __init__(self):
-        self.storage = Storage('orders.json')
-        self.orders = self.storage.load()
-        
-        if self.orders is None:
-            self.orders = []
-            self.storage.save(self.orders)
-    
+class OrderManager:    
+    def get_user_id(self, username):
+        username = username.lower().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,)
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            return row[0]
+
+        finally:
+            conn.close()
+
     def generate_order_id(self):
-        if len(self.orders) == 0:
-            return "O0001"
-        
-        last_order_id = self.orders[-1]['order_id']
-        last_number = int(last_order_id[1:])
-        new_number = last_number + 1
-        new_order_id = f"O{new_number:04d}"
-        
-        return new_order_id
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT order_id
+                FROM orders
+                ORDER BY order_id DESC
+                LIMIT 1
+            """)
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return "O0001"
+
+            last_order_id = row[0]
+            number = int(last_order_id[1:])
+            next_number = number + 1
+
+            return f"O{next_number:04d}"
+
+        finally:
+            conn.close()
     
     def create_order(self, username, cart_items, product_manager, cart_manager):
-        if len(cart_items) == 0:
-            return False, "Your cart is empty", None
- 
-        for item in cart_items:
-            available, message = product_manager.check_stock(
-                item['product_id'],
-                item['quantity']
+        username = username.lower().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Start checkout as one database transaction
+            conn.execute("BEGIN IMMEDIATE")
+
+            # Find the user's SQLite ID
+            cursor.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,)
             )
-            if not available:
-                return False, f"Stock check failed: {message}", None
-                
-        order_items = []
-        total_cost = 0
-        
-        for item in cart_items:
-            product = product_manager.find_product_id(item['product_id'])
-            
-            if product is None:
-                return False, f"Product {item['product_id']} not found", None
 
-            item_cost = product['price'] * item['quantity']
-            total_cost = total_cost + item_cost
+            user_row = cursor.fetchone()
 
-            order_items.append({
-                'product_id': item['product_id'],
-                'quantity': item['quantity'],
-                'unit_price': product['price']
-            })
+            if user_row is None:
+                conn.rollback()
+                return False, "User not found", None
 
-            success, msg = product_manager.update_stock(
-                item['product_id'],
-                -item['quantity'] 
+            user_id = user_row[0]
+
+            # Get the user's current cart directly from SQLite
+            cursor.execute(
+                """
+                SELECT
+                    cart_items.product_id,
+                    cart_items.quantity,
+                    products.price,
+                    products.stock
+                FROM cart_items
+                JOIN products
+                    ON cart_items.product_id = products.product_id
+                WHERE cart_items.user_id = ?
+                """,
+                (user_id,)
             )
-            
-            if not success:
-                return False, f"Failed to update stock: {msg}", None
 
-        order_id = self.generate_order_id()
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            rows = cursor.fetchall()
 
-        new_order = {
-            'order_id': order_id,
-            'username': username,
-            'items': order_items,
-            'total': total_cost,
-            'timestamp': timestamp
-        }
+            if len(rows) == 0:
+                conn.rollback()
+                return False, "Your cart is empty", None
 
-        self.orders.append(new_order)
-        self.storage.save(self.orders)
-        cart_manager.clear_cart(username)
+            total_cost = 0
+            order_items = []
 
-        return True, "Order placed successfully!", order_id
+            # Check stock and calculate total
+            for row in rows:
+                product_id = row[0]
+                quantity = row[1]
+                unit_price = row[2]
+                stock = row[3]
+
+                if stock < quantity:
+                    conn.rollback()
+                    return (
+                        False,
+                        f"Not enough stock for {product_id}. "
+                        f"Only {stock} available",
+                        None
+                    )
+
+                total_cost += unit_price * quantity
+
+                order_items.append({
+                    "product_id": product_id,
+                    "quantity": quantity,
+                    "unit_price": unit_price
+                })
+
+            # Generate next order ID
+            cursor.execute("""
+                SELECT COALESCE(
+                    MAX(CAST(SUBSTR(order_id, 2) AS INTEGER)),
+                    0
+                )
+                FROM orders
+            """)
+
+            last_number = cursor.fetchone()[0]
+            order_id = f"O{last_number + 1:04d}"
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Create the order
+            cursor.execute(
+                """
+                INSERT INTO orders
+                (order_id, user_id, total, timestamp)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    user_id,
+                    total_cost,
+                    timestamp
+                )
+            )
+
+            # Save each item and reduce inventory
+            for item in order_items:
+                cursor.execute(
+                    """
+                    INSERT INTO order_items
+                    (order_id, product_id, quantity, unit_price)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        order_id,
+                        item["product_id"],
+                        item["quantity"],
+                        item["unit_price"]
+                    )
+                )
+
+                cursor.execute(
+                    """
+                    UPDATE products
+                    SET stock = stock - ?
+                    WHERE product_id = ?
+                    """,
+                    (
+                        item["quantity"],
+                        item["product_id"]
+                    )
+                )
+
+            # Clear the cart
+            cursor.execute(
+                """
+                DELETE FROM cart_items
+                WHERE user_id = ?
+                """,
+                (user_id,)
+            )
+
+            # Everything succeeded
+            conn.commit()
+
+            return True, "Order placed successfully!", order_id
+
+        except Exception as error:
+            conn.rollback()
+            return False, f"Order failed: {error}", None
+
+        finally:
+            conn.close()
     
     def get_user_orders(self, username):
         user_orders = []
