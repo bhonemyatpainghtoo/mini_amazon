@@ -19,6 +19,15 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            product_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            stock INTEGER NOT NULL CHECK (stock >= 0)
+        )
+    """)
+
     conn.commit()
     conn.close()
 

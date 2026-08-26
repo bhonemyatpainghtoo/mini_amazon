@@ -1,43 +1,95 @@
-from storage import Storage
+from database import get_connection
 
 class ProductManager:
-    def __init__(self):
-        self.storage = Storage('products.json')
-        self.products = self.storage.load()
-        if self.products is None or len(self.products) == 0:
-            self.products = self.create_samples()
-            self.storage.save(self.products)
-    
-    def create_samples(self):
-        return [
-            {"product_id": "P1001", "name": "Wireless Mouse", "price": 19.99, "stock": 50},
-            {"product_id": "P1002", "name": "USB-C Cable", "price": 9.99, "stock": 100},
-            {"product_id": "P1003", "name": "Mechanical Keyboard", "price": 79.99, "stock": 25},
-            {"product_id": "P1004", "name": "HD Webcam", "price": 49.99, "stock": 30},
-            {"product_id": "P1005", "name": "Laptop Stand", "price": 29.99, "stock": 40},
-            {"product_id": "P1006", "name": "Bluetooth Headphones", "price": 59.99, "stock": 35},
-            {"product_id": "P1007", "name": "External SSD 1TB", "price": 89.99, "stock": 20},
-            {"product_id": "P1008", "name": "Monitor 24 inch", "price": 199.99, "stock": 15},
-            {"product_id": "P1009", "name": "Desk Lamp LED", "price": 24.99, "stock": 45},
-            {"product_id": "P1010", "name": "Phone Charger", "price": 14.99, "stock": 75}
-        ]
-    
     def get_products(self):
-        return self.products
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT product_id, name, price, stock FROM products"
+            )
+
+            rows = cursor.fetchall()
+
+            products = []
+
+            for row in rows:
+                products.append({
+                    "product_id": row[0],
+                    "name": row[1],
+                    "price": row[2],
+                    "stock": row[3]
+                })
+
+            return products
+
+        finally:
+            conn.close()
     
     def find_product_id(self, product_id):
-        for product in self.products:
-            if product['product_id'] == product_id:
-                return product 
-        return None 
+        product_id = product_id.upper().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT product_id, name, price, stock
+                FROM products
+                WHERE product_id = ?
+                """,
+                (product_id,)
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            return {
+                "product_id": row[0],
+                "name": row[1],
+                "price": row[2],
+                "stock": row[3]
+            }
+
+        finally:
+            conn.close()
     
     def search_products(self, keyword):
-        keyword_lower = keyword.lower()
-        matching_products = []
-        for product in self.products:
-            if keyword_lower in product['name'].lower():
-                matching_products.append(product)
-        return matching_products
+        keyword = keyword.strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT product_id, name, price, stock
+                FROM products
+                WHERE LOWER(name) LIKE LOWER(?)
+                """,
+                (f"%{keyword}%",)
+            )
+
+            rows = cursor.fetchall()
+
+            products = []
+
+            for row in rows:
+                products.append({
+                    "product_id": row[0],
+                    "name": row[1],
+                    "price": row[2],
+                    "stock": row[3]
+                })
+
+            return products
+
+        finally:
+            conn.close()
     
     def check_stock(self, product_id, quantity):
         product = self.find_product_id(product_id)
@@ -48,12 +100,40 @@ class ProductManager:
         return True, "Stock is available"
     
     def update_stock(self, product_id, quantity_change):
-        product = self.find_product_id(product_id)
-        if product is None:
-            return False, f"Product '{product_id}' not found"
-        new_stock = product['stock'] + quantity_change
-        if new_stock < 0:
-            return False, "Cannot reduce stock below zero"
-        product['stock'] = new_stock
-        self.storage.save(self.products)
-        return True, f"Stock updated. New stock: {new_stock}"
+        product_id = product_id.upper().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT stock FROM products WHERE product_id = ?",
+                (product_id,)
+            )
+
+            row = cursor.fetchone()
+
+            if row is None:
+                return False, f"Product '{product_id}' not found"
+
+            current_stock = row[0]
+            new_stock = current_stock + quantity_change
+
+            if new_stock < 0:
+                return False, "Cannot reduce stock below zero"
+
+            cursor.execute(
+                """
+                UPDATE products
+                SET stock = ?
+                WHERE product_id = ?
+                """,
+                (new_stock, product_id)
+            )
+
+            conn.commit()
+
+            return True, f"Stock updated. New stock: {new_stock}"
+
+        finally:
+            conn.close()
