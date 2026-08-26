@@ -1,64 +1,90 @@
-from storage import Storage  
+from database import get_connection  
+import sqlite3
 import hashlib  
 
-class UserManager:   
-    def __init__(self):
-        self.storage = Storage('users.json')
-        self.users = self.storage.load()
-        
-        if self.users is None:
-            self.users = []
-            self.storage.save(self.users) 
-    
+class UserManager:     
     def secure_password(self, password):
         hashed = hashlib.sha256(password.encode()).hexdigest()
         return hashed
     
     def check_username(self, username):
-        for user in self.users:
-            if user['username'] == username.lower().strip():
-                return True 
-        
-        return False 
+        username = username.lower().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,)
+            )
+
+            user = cursor.fetchone()
+
+            return user is not None
+
+        finally:
+            conn.close()
     
     def register_user(self, username, password):
-        
-        if not username or username.strip() == "":
-            return False, "Username cannot be empty"
-        
 
-        if self.check_username(username):
-            return False, f"Username '{username}' is already taken"
-        
+        username = username.lower().strip()
+
+        if not username:
+            return False, "Username cannot be empty"
 
         if len(password) < 6:
             return False, "Password must be at least 6 characters long"
-        
 
-        new_user = {
-            'username': username.lower().strip(),
-            'password': self.secure_password(password)  
-        }
+        hashed_password = self.secure_password(password)
 
-        self.users.append(new_user)
-        self.storage.save(self.users)  
-        return True, f"Account created successfully! Welcome, {username}!"
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)",
+                (username, hashed_password)
+            )
+
+            conn.commit()
+
+            return True, f"Account created successfully! Welcome, {username}!"
+
+        except sqlite3.IntegrityError:
+            return False, "Username already exists"
+
+        finally:
+            conn.close()
     
     def login_user(self, username, password):
 
         if not username or not password:
             return False, "Please enter both username and password"
-        
-        user_found = None
-        for user in self.users:
-            if user['username'] == username.lower().strip():
-                user_found = user
-                break 
 
-        if user_found is None:
+        username = username.lower().strip()
+        hashed_password = self.secure_password(password)
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "SELECT password FROM users WHERE username = ?",
+                (username,)
+            )
+
+            user = cursor.fetchone()
+
+            if user is None:
+                return False, "Invalid username or password"
+
+            stored_password = user[0]
+
+            if stored_password == hashed_password:
+                return True, f"Welcome back, {username}!"
+
             return False, "Invalid username or password"
 
-        if user_found['password'] == self.secure_password(password):
-            return True, f"Welcome back, {username}!"
-        else:
-            return False, "Invalid username or password"
+        finally:
+            conn.close()
