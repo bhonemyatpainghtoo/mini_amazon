@@ -202,19 +202,131 @@ class OrderManager:
             conn.close()
     
     def get_user_orders(self, username):
-        user_orders = []
-        for order in self.orders:
-            if order['username'] == username:
-                user_orders.append(order)
+        username = username.lower().strip()
 
-        user_orders.reverse()
-        return user_orders
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    orders.order_id,
+                    users.username,
+                    orders.total,
+                    orders.timestamp
+                FROM orders
+                JOIN users
+                    ON orders.user_id = users.id
+                WHERE users.username = ?
+                ORDER BY orders.timestamp DESC
+                """,
+                (username,)
+            )
+
+            order_rows = cursor.fetchall()
+
+            user_orders = []
+
+            for order_row in order_rows:
+                order_id = order_row[0]
+
+                cursor.execute(
+                    """
+                    SELECT
+                        product_id,
+                        quantity,
+                        unit_price
+                    FROM order_items
+                    WHERE order_id = ?
+                    """,
+                    (order_id,)
+                )
+
+                item_rows = cursor.fetchall()
+
+                items = []
+
+                for item_row in item_rows:
+                    items.append({
+                        "product_id": item_row[0],
+                        "quantity": item_row[1],
+                        "unit_price": item_row[2]
+                    })
+
+                user_orders.append({
+                    "order_id": order_row[0],
+                    "username": order_row[1],
+                    "total": order_row[2],
+                    "timestamp": order_row[3],
+                    "items": items
+                })
+
+            return user_orders
+
+        finally:
+            conn.close()
     
     def find_order_by_id(self, order_id):
-        for order in self.orders:
-            if order['order_id'] == order_id:
-                return order
-        return None
+        order_id = order_id.upper().strip()
+
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    orders.order_id,
+                    users.username,
+                    orders.total,
+                    orders.timestamp
+                FROM orders
+                JOIN users
+                    ON orders.user_id = users.id
+                WHERE orders.order_id = ?
+                """,
+                (order_id,)
+            )
+
+            order_row = cursor.fetchone()
+
+            if order_row is None:
+                return None
+
+            cursor.execute(
+                """
+                SELECT
+                    product_id,
+                    quantity,
+                    unit_price
+                FROM order_items
+                WHERE order_id = ?
+                """,
+                (order_id,)
+            )
+
+            item_rows = cursor.fetchall()
+
+            items = []
+
+            for item_row in item_rows:
+                items.append({
+                    "product_id": item_row[0],
+                    "quantity": item_row[1],
+                    "unit_price": item_row[2]
+                })
+
+            return {
+                "order_id": order_row[0],
+                "username": order_row[1],
+                "total": order_row[2],
+                "timestamp": order_row[3],
+                "items": items
+            }
+
+        finally:
+            conn.close()
     
     def export_receipt(self, order_id):
         order = self.find_order_by_id(order_id)
