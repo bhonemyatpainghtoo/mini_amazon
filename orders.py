@@ -1,7 +1,9 @@
 from database import get_connection
 from datetime import datetime
+import os
 
-class OrderManager:    
+
+class OrderManager:
     def get_user_id(self, username):
         username = username.lower().strip()
 
@@ -24,43 +26,28 @@ class OrderManager:
         finally:
             conn.close()
 
-    def generate_order_id(self):
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                SELECT order_id
-                FROM orders
-                ORDER BY order_id DESC
-                LIMIT 1
-            """)
-
-            row = cursor.fetchone()
-
-            if row is None:
-                return "O0001"
-
-            last_order_id = row[0]
-            number = int(last_order_id[1:])
-            next_number = number + 1
-
-            return f"O{next_number:04d}"
-
-        finally:
-            conn.close()
-    
     def create_order(self, username, cart_items, product_manager, cart_manager):
+        """
+        Turns the current cart into a saved order.
+
+        This whole method runs as a single "transaction" — think
+        of it like a bank transfer. Several things need to happen
+        (create the order, save each item, reduce stock, clear the
+        cart), and a transaction makes sure they either ALL succeed
+        together, or NONE of them do. If anything goes wrong partway
+        through, conn.rollback() undoes everything back to how it
+        was before we started — so you never end up with, say, an
+        order that got created but never reduced stock.
+        """
         username = username.lower().strip()
 
         conn = get_connection()
         cursor = conn.cursor()
 
         try:
-            # Start checkout as one database transaction
+            # Marks the start of the all-or-nothing block.
             conn.execute("BEGIN IMMEDIATE")
 
-            # Find the user's SQLite ID
             cursor.execute(
                 "SELECT id FROM users WHERE username = ?",
                 (username,)
@@ -74,7 +61,8 @@ class OrderManager:
 
             user_id = user_row[0]
 
-            # Get the user's current cart directly from SQLite
+            # Pull the cart straight from the database (joined with
+            # products so we get the current price and stock too).
             cursor.execute(
                 """
                 SELECT
@@ -99,7 +87,9 @@ class OrderManager:
             total_cost = 0
             order_items = []
 
-            # Check stock and calculate total
+            # Re-check stock right here, at checkout time — not just
+            # when the item was added earlier. Someone else could
+            # have bought the last one in between.
             for row in rows:
                 product_id = row[0]
                 quantity = row[1]
@@ -123,7 +113,8 @@ class OrderManager:
                     "unit_price": unit_price
                 })
 
-            # Generate next order ID
+            # Order IDs look like O0001, O0002, ... — find the
+            # highest existing number and add one.
             cursor.execute("""
                 SELECT COALESCE(
                     MAX(CAST(SUBSTR(order_id, 2) AS INTEGER)),
@@ -137,22 +128,16 @@ class OrderManager:
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Create the order
             cursor.execute(
                 """
                 INSERT INTO orders
                 (order_id, user_id, total, timestamp)
                 VALUES (?, ?, ?, ?)
                 """,
-                (
-                    order_id,
-                    user_id,
-                    total_cost,
-                    timestamp
-                )
+                (order_id, user_id, total_cost, timestamp)
             )
 
-            # Save each item and reduce inventory
+            # Save each item and reduce inventory to match.
             for item in order_items:
                 cursor.execute(
                     """
@@ -174,33 +159,28 @@ class OrderManager:
                     SET stock = stock - ?
                     WHERE product_id = ?
                     """,
-                    (
-                        item["quantity"],
-                        item["product_id"]
-                    )
+                    (item["quantity"], item["product_id"])
                 )
 
-            # Clear the cart
             cursor.execute(
-                """
-                DELETE FROM cart_items
-                WHERE user_id = ?
-                """,
+                "DELETE FROM cart_items WHERE user_id = ?",
                 (user_id,)
             )
 
-            # Everything succeeded
+            # Everything above succeeded — make it permanent.
             conn.commit()
 
             return True, "Order placed successfully!", order_id
 
         except Exception as error:
+            # Anything unexpected went wrong — undo it all rather
+            # than leave the database half-changed.
             conn.rollback()
             return False, f"Order failed: {error}", None
 
         finally:
             conn.close()
-    
+
     def get_user_orders(self, username):
         username = username.lower().strip()
 
@@ -266,7 +246,7 @@ class OrderManager:
 
         finally:
             conn.close()
-    
+
     def find_order_by_id(self, order_id):
         order_id = order_id.upper().strip()
 
@@ -327,15 +307,24 @@ class OrderManager:
 
         finally:
             conn.close()
-    
+
     def export_receipt(self, order_id):
         order = self.find_order_by_id(order_id)
-        
+
         if order is None:
             return False, f"Order {order_id} not found"
 
-        filename = f"receipt_{order_id}.txt"
-        
+        # Save receipts into their own "receipts" folder next to
+        # the script, instead of wherever the terminal happened to
+        # be standing when you ran the app. exist_ok=True means
+        # "create the folder if it's missing, and don't complain
+        # if it's already there."
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        receipts_dir = os.path.join(script_dir, "receipts")
+        os.makedirs(receipts_dir, exist_ok=True)
+
+        filename = os.path.join(receipts_dir, f"receipt_{order_id}.txt")
+
         try:
             with open(filename, 'w') as file:
                 file.write("=" * 60 + "\n")
@@ -349,20 +338,20 @@ class OrderManager:
                 file.write("-" * 60 + "\n")
                 file.write(f"{'Product ID':<15} {'Qty':<8} {'Price':<12} {'Subtotal':<12}\n")
                 file.write("-" * 60 + "\n")
-                
+
                 for item in order['items']:
                     subtotal = item['unit_price'] * item['quantity']
                     file.write(f"{item['product_id']:<15} ")
                     file.write(f"{item['quantity']:<8} ")
                     file.write(f"${item['unit_price']:<11.2f} ")
                     file.write(f"${subtotal:<11.2f}\n")
-                
+
                 file.write("-" * 60 + "\n")
                 file.write(f"{'TOTAL:':<38} ${order['total']:.2f}\n")
                 file.write("=" * 60 + "\n")
                 file.write("\nThank you for shopping with Mini-Amazon!\n")
-            
+
             return True, f"Receipt saved to {filename}"
-        
+
         except Exception as error:
             return False, f"Failed to save receipt: {str(error)}"

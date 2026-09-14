@@ -39,7 +39,7 @@ def test_duplicate_username():
 
     success, message = manager.register_user(
         "testuser",
-        "anotherpassword"
+        "anotherpassword1"  # needs a digit now that we require one
     )
 
     assert success is False
